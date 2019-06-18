@@ -20,7 +20,7 @@ module Setup
       }
     )
 
-    allow :new, :import, :pull_import, :bulk_cross, :simple_cross, :bulk_expand, :simple_expand, :copy, :switch_navigation, :render_chart, :data_type_config
+    allow :new, :import, :pull_import, :bulk_cross, :simple_cross, :bulk_expand, :simple_expand, :copy, :switch_navigation, :data_type_config
 
     shared_deny :simple_delete_data_type, :bulk_delete_data_type, :simple_expand, :bulk_expand
 
@@ -101,8 +101,12 @@ module Setup
       errors.blank?
     end
 
+    def unique_properties
+      records_model.unique_properties
+    end
+
     def build_indices
-      unique_properties = records_model.unique_properties
+      unique_properties = self.unique_properties
       indexed_properties = []
       begin
         records_model.collection.indexes.each do |index|
@@ -110,13 +114,18 @@ module Setup
           if unique_properties.detect { |p| p == indexed_property }
             indexed_properties << indexed_property
           else
-            records_model.collection.indexes.drop_one(index['name'])
+            begin
+              records_model.collection.indexes.drop_one(index['name'])
+            rescue Exception => ex
+              errors.add(:schema, "with error dropping index #{indexed_property}: #{ex.message}")
+            end
           end
         end
       rescue
         # Mongo driver raises an exception if the collection does not exists, nothing to worry about
       end
       unique_properties.reject { |p| indexed_properties.include?(p) }.each do |p|
+        next if p == '_id'
         begin
           records_model.collection.indexes.create_one({ p => 1 }, unique: true)
         rescue Exception => ex
